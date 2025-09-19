@@ -26,7 +26,7 @@ local function tpLoop()
 				i = i + 1
 				if i > #coords then i = 1 end
 			end
-			task.wait(0.1) 
+			task.wait(1) 
 		end
 	end)
 end
