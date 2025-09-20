@@ -2,18 +2,15 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
 
-
 local flying, rusuhOn = false, false
 local flySpeed = 70
 local rusuhDelay, lastRusuh = 0.08, 0
 local moveVec = Vector3.zero
-
 
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 ScreenGui.Name = "FlyRusuhUI"
@@ -31,7 +28,6 @@ title.TextColor3 = Color3.fromRGB(255,255,255)
 title.Text = "🚀 WataX"
 title.Font, title.TextSize = Enum.Font.SourceSansBold, 18
 
-
 local closeBtn = Instance.new("TextButton", mainFrame)
 closeBtn.Size = UDim2.new(0,30,0,30)
 closeBtn.Position = UDim2.new(1,-35,0,0)
@@ -39,7 +35,6 @@ closeBtn.Text = "X"
 closeBtn.BackgroundColor3 = Color3.fromRGB(150,50,50)
 closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
 closeBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-
 
 local function makeBtn(txt,pos)
 	local b = Instance.new("TextButton", mainFrame)
@@ -64,7 +59,6 @@ local forwardBtn = makeDirBtn("↑",0.37,140,Color3.fromRGB(70,70,150))
 local backBtn    = makeDirBtn("↓",0.37,190,Color3.fromRGB(70,70,150))
 local leftBtn    = makeDirBtn("←",0.1,190,Color3.fromRGB(70,70,150))
 local rightBtn   = makeDirBtn("→",0.65,190,Color3.fromRGB(70,70,150))
-
 
 local sliderFrame = Instance.new("Frame", mainFrame)
 sliderFrame.Size = UDim2.new(0.8,0,0,20)
@@ -119,7 +113,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-
 local function rusuhNearby()
 	local now = tick()
 	if now - lastRusuh < rusuhDelay then return end
@@ -134,12 +127,11 @@ local function rusuhNearby()
 	end
 
 	if nearest then
-		local behindTarget = nearest.CFrame * CFrame.new(0,0,4)
-		local inFront = nearest.CFrame * CFrame.new(0,0,-2)
-		HumanoidRootPart.CFrame = behindTarget
-		task.wait(0.02)
-		HumanoidRootPart.CFrame = inFront
-		Humanoid:ChangeState(Enum.HumanoidStateType.FallingDown)
+		local dir = (nearest.Position - HumanoidRootPart.Position).Unit
+		
+		HumanoidRootPart.Velocity = dir * 600 + Vector3.new(0,120,0) 
+		Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+		
 	end
 end
 
