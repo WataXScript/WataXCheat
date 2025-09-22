@@ -9,7 +9,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 
 local flying, rusuhOn = false, false
 local flySpeed = 70
-local rusuhDelay, lastRusuh = 0.08, 0
+local rusuhDelay, lastRusuh = 0.01, 0
 local moveVec = Vector3.zero
 
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
@@ -129,7 +129,7 @@ local function rusuhNearby()
 	if nearest then
 		local dir = (nearest.Position - HumanoidRootPart.Position).Unit
 		
-		HumanoidRootPart.Velocity = dir * 600 + Vector3.new(0,120,0) 
+		HumanoidRootPart.Velocity = dir * 300 + Vector3.new(2,0,2) 
 		Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 		
 	end
