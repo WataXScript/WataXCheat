@@ -12,8 +12,8 @@ local Humanoid = Character:WaitForChild("Humanoid")
 
 
 local flying, rusuhOn = false, false
-local flySpeed = 70
-local rusuhDelay, lastRusuh = 0.001, 0
+local flySpeed = 200
+local rusuhDelay, lastRusuh = 0.0001, 0
 local moveVec = Vector3.zero
 local invincible = false
 
@@ -152,7 +152,7 @@ end
 
 if nearest then  
 	local dir = (nearest.Position - HumanoidRootPart.Position).Unit  
-	HumanoidRootPart.Velocity = dir * 450 + Vector3.new(3,1,2)  
+	HumanoidRootPart.Velocity = dir * 450 + Vector3.new(2,1,2)  
 	Humanoid:ChangeState(Enum.HumanoidStateType.Physics)  
 end
 
