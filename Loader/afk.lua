@@ -1,249 +1,122 @@
 
+
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
 
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "AFKGui"
-gui.ResetOnSpawn = false
-gui.Parent = playerGui
+local function click(btn)
+    if not btn then return end
+    for _,c in ipairs(getconnections(btn.MouseButton1Click)) do
+        c:Fire()
+    end
+end
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0,120,0,50)
-btn.Position = UDim2.new(0.7,0,0.1,0)
-btn.Text = "START AFK"
-btn.Active = true
-btn.Draggable = true
-btn.BackgroundColor3 = Color3.fromRGB(50,200,50)
-btn.Parent = gui
+local function findButtonByText(root, txt)
+    for _,v in ipairs(root:GetDescendants()) do
+        if v:IsA("TextButton") and v.Text == txt then
+            return v
+        end
+    end
+    return nil
+end
 
-local AFKMode = false
+
+local function getButtons()
+    local gui1 = LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("WataX_AnimUI").Frame
+    local gui2 = CoreGui:WaitForChild("WataXReplay").Frame
+
+    local bypassOff = findButtonByText(gui1, "BYPASS: OFF")
+    local bypassOn  = findButtonByText(gui1, "BYPASS: ON")
+    local startBtn  = findButtonByText(gui2, "Start To End")
+    local stopBtn   = findButtonByText(gui2, "Stop")
+
+    return bypassOff, bypassOn, startBtn, stopBtn
+end
+
+
+if CoreGui:FindFirstChild("AFKGui") then
+    CoreGui.AFKGui:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui", CoreGui)
+screenGui.Name = "AFKGui"
+screenGui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0, 250, 0, 120)
+frame.Position = UDim2.new(0.5, -125, 0.4, 0)
+frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+frame.Active = true
+frame.Draggable = true
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 28)
+title.Text = "AFK Auto Respawn"
+title.TextColor3 = Color3.new(1,1,1)
+title.BackgroundTransparency = 1
+
+local input = Instance.new("TextBox", frame)
+input.Size = UDim2.new(0, 200, 0, 30)
+input.Position = UDim2.new(0.5, -100, 0, 40)
+input.PlaceholderText = "Detik Respawn"
+input.Text = ""
+input.ClearTextOnFocus = false
+
+local startBtn = Instance.new("TextButton", frame)
+startBtn.Size = UDim2.new(0, 200, 0, 30)
+startBtn.Position = UDim2.new(0.5, -100, 0, 80)
+startBtn.Text = "Start AFK"
+
+
 local running = false
 
-
-local function findStartButton()
-    local parents = {game.CoreGui, playerGui}
-    for _, parent in ipairs(parents) do
-        if parent then
-            for _, v in pairs(parent:GetDescendants()) do
-                if v:IsA("TextButton") and v.Text and v.Text:lower() == "start to end" then
-                    return v
-                end
-            end
-        end
-    end
-    return nil
-end
-
-
-local function findBypassButton(state)
-    local parents = {game.CoreGui, playerGui}
-    for _, parent in ipairs(parents) do
-        if parent then
-            for _, v in pairs(parent:GetDescendants()) do
-                if v:IsA("TextButton") and v.Text and v.Text:upper() == "BYPASS: " .. state then
-                    return v
-                end
-            end
-        end
-    end
-    return nil
-end
-
-
-local VirtualInputManager
-pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
-
-
-local function clickButton(btnObj)
-    if not btnObj then return false end
-    local ok = false
-
-    
-    if type(getconnections) == "function" then
-        pcall(function()
-            for _, conn in pairs(getconnections(btnObj.MouseButton1Click)) do
-                if conn.Function then
-                    conn.Function()
-                    ok = true
-                end
-            end
-        end)
-        if ok then
-            print("🔘 clickButton: used getconnections() ->", btnObj.Text)
-            return true
-        end
-    end
-
-    
-    pcall(function()
-        if btnObj.Activate then
-            btnObj:Activate()
-            ok = true
-        end
-    end)
-    if ok then
-        print("🔘 clickButton: used :Activate() ->", btnObj.Text)
-        return true
-    end
-
-    
-    if VirtualInputManager then
-        pcall(function()
-            local absPos = btnObj.AbsolutePosition
-            local absSize = btnObj.AbsoluteSize
-            local x = absPos.X + absSize.X/2
-            local y = absPos.Y + absSize.Y/2
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-            ok = true
-        end)
-        if ok then
-            print("🔘 clickButton: used VirtualInputManager ->", btnObj.Text)
-            return true
-        end
-    end
-
-    
-    pcall(function()
-        if btnObj.MouseButton1Click then
-            btnObj.MouseButton1Click:Fire()
-            ok = true
-        end
-    end)
-    if ok then
-        print("🔘 clickButton: used :Fire() ->", btnObj.Text)
-        return true
-    end
-
-    print("❌ clickButton: FAILED to click ->", btnObj.Text)
-    return false
-end
-
-
-local function respawnPlayer()
-    -- 1) LoadCharacter
-    local ok, err = pcall(function() player:LoadCharacter() end)
-    if ok then
-        print("⤴ Respawn: LoadCharacter() succeeded")
-        return true
-    end
-
-    
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            local success = pcall(function() humanoid.Health = 0 end)
-            if success then
-                print("⤴ Respawn: humanoid.Health = 0")
-                return true
-            end
-        end
-    end
-
-    
-    if char then
-        local success2 = pcall(function() char:BreakJoints() end)
-        if success2 then
-            print("⤴ Respawn: BreakJoints() called")
-            return true
-        end
-    end
-
-    warn("⤴ Respawn: all methods failed")
-    return false
-end
-
-
-local function runAFK()
-    while AFKMode do
-        if not running then
-            running = true
-
-            local startBtn = findStartButton()
-            if not startBtn then
-                warn("Start To End button not found. Retry in 3s.")
-                running = false
-                for i = 1, 3 do
-                    if not AFKMode then break end
-                    task.wait(1)
-                end
-                continue
-            end
-
-            
-            clickButton(startBtn)
-
-            
-            local stillTime, missingTime, lastPos = 0, 0, nil
-            while AFKMode do
-                local char = player.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-
-                if hrp then
-                    missingTime = 0
-                    local currentPos = hrp.Position
-                    if lastPos and (currentPos - lastPos).Magnitude < 0.1 then
-                        stillTime = stillTime + 1
-                    else
-                        stillTime = 0
-                    end
-                    lastPos = currentPos
-                else
-                    missingTime = missingTime + 1
-                end
-
-                if stillTime >= 5 or missingTime >= 5 then
-                    print("✅ Replay dianggap selesai")
-                    break
-                end
-                task.wait(1)
-            end
-
-            if not AFKMode then
-                running = false
-                break
-            end
-
-            
-            local bypassOn = findBypassButton("ON")
-            if bypassOn then clickButton(bypassOn) end
-
-            
-            respawnPlayer()
-
-            
-            for i = 1, 20 do
-                if not AFKMode then break end
-                task.wait(1)
-            end
-
-            
-            local bypassOff = findBypassButton("OFF")
-            if bypassOff then clickButton(bypassOff) end
-
-            
-            local startBtn2 = findStartButton()
-            if startBtn2 then clickButton(startBtn2) end
-
-            running = false
-        else
-            task.wait(1)
-        end
-    end
-    running = false
-end
-
-
-btn.MouseButton1Click:Connect(function()
-    AFKMode = not AFKMode
-    btn.Text = AFKMode and "STOP AFK" or "START AFK"
-
-    if AFKMode then
-        task.spawn(runAFK)
-    else
+startBtn.MouseButton1Click:Connect(function()
+    if running then
         running = false
+        startBtn.Text = "Start AFK"
+        return
     end
+    running = true
+    startBtn.Text = "Stop AFK"
+
+    task.spawn(function()
+        while running do
+            local dur = tonumber(input.Text) or 10
+
+            local bypassOff, bypassOn, startBtnUI, stopBtnUI = getButtons()
+
+            
+            click(startBtnUI)
+            click(bypassOff)
+            print("[AFK] Start To End + BYPASS: OFF diklik")
+
+            
+            task.wait(dur)
+
+            
+            click(stopBtnUI)
+            click(bypassOn)
+            print("[AFK] Stop + BYPASS: ON diklik")
+
+            
+            task.wait(0.5) 
+            local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.Health = 0
+                print("[AFK] Respawn triggered")
+            end
+
+            
+            LocalPlayer.CharacterAdded:Wait()
+            task.wait(1) 
+            local _, bypassOnAgain = getButtons()
+            click(bypassOnAgain)
+            print("[AFK] BYPASS: ON diklik lagi setelah respawn")
+
+        
+            task.wait(5)
+        end
+    end)
 end)
