@@ -15,90 +15,170 @@ local cooldown = 1
 local tpDuration = 0.01
 local isMinimized = false
 local autoRespawn = false
+local autoLoop = true
 local currentSlot = 1
 local maxSlots = 5
 
--- Fix untuk error file corruption
-local function resetSaveFile()
-    local success = pcall(function()
-        if isfile and isfile("auto_tp_coordinates.txt") then
-            delfile("auto_tp_coordinates.txt")
-            print("🗑️ Corrupted save file deleted")
-        end
+-- Slot file names
+local slotFileNames = {
+    "tpwata1.txt",
+    "tpwata2.txt", 
+    "tpwata3.txt",
+    "tpwata4.txt",
+    "tpwata5.txt"
+}
+
+-- Simple file system check
+local function isFileSystemAvailable()
+    return pcall(function() 
+        return readfile and writefile and delfile and isfile
     end)
 end
 
--- Load saved coordinates dengan error handling
-local function loadCoordinates()
-    -- Reset data default dulu
-    coordinates = {}
-    currentSlot = 1
-    autoRespawn = false
+-- Get filename for specific slot
+local function getSlotFileName(slotNumber)
+    return slotFileNames[slotNumber] or "autotp_slot_" .. slotNumber .. ".txt"
+end
+
+-- Convert Vector3 to table for JSON serialization
+local function vector3ToTable(vec)
+    return {X = vec.X, Y = vec.Y, Z = vec.Z}
+end
+
+-- Convert table back to Vector3
+local function tableToVector3(tbl)
+    return Vector3.new(tbl.X, tbl.Y, tbl.Z)
+end
+
+-- Save coordinates untuk slot tertentu
+local function saveCoordinates()
+    if not isFileSystemAvailable() then
+        print("❌ File system not available")
+        return false
+    end
     
-    local success, result = pcall(function()
-        if not isfile or not isfile("auto_tp_coordinates.txt") then
-            return nil
-        end
-        return readfile("auto_tp_coordinates.txt")
+    -- Convert coordinates to serializable format
+    local serializableCoords = {}
+    for i, coord in ipairs(coordinates) do
+        table.insert(serializableCoords, vector3ToTable(coord))
+    end
+    
+    local dataToSave = {
+        coordinates = serializableCoords,
+        autoRespawn = autoRespawn,
+        autoLoop = autoLoop,
+        timestamp = os.time(),
+        version = "1.0"
+    }
+    
+    local fileName = getSlotFileName(currentSlot)
+    
+    local success, err = pcall(function()
+        writefile(fileName, HttpService:JSONEncode(dataToSave))
     end)
     
-    if success and result and result ~= "" then
+    if success then
+        print("✅ Saved slot " .. currentSlot .. " with " .. #coordinates .. " coordinates to " .. fileName)
+        return true
+    else
+        print("❌ Failed to save slot " .. currentSlot .. ": " .. tostring(err))
+        return false
+    end
+end
+
+-- Load coordinates untuk slot tertentu
+local function loadCoordinates()
+    if not isFileSystemAvailable() then
+        print("❌ File system not available")
+        return false
+    end
+    
+    local fileName = getSlotFileName(currentSlot)
+    
+    print("🔄 Attempting to load from: " .. fileName)
+    
+    -- Reset to defaults first
+    coordinates = {}
+    autoRespawn = false
+    autoLoop = true
+    
+    local success, result = pcall(function()
+        if isfile(fileName) then
+            print("📁 File exists: " .. fileName)
+            local content = readfile(fileName)
+            print("📖 File content length: " .. string.len(content))
+            return content
+        else
+            print("📝 File does not exist: " .. fileName)
+            return nil
+        end
+    end)
+    
+    if success and result then
+        print("📖 File read successfully, decoding...")
         local success2, decoded = pcall(function()
             return HttpService:JSONDecode(result)
         end)
         
         if success2 and decoded then
-            coordinates = decoded.coordinates or {}
-            currentSlot = decoded.currentSlot or 1
+            print("✅ JSON decoded successfully")
+            
+            -- Load coordinates
+            if decoded.coordinates and type(decoded.coordinates) == "table" then
+                for i, coordData in ipairs(decoded.coordinates) do
+                    if coordData.X and coordData.Y and coordData.Z then
+                        table.insert(coordinates, tableToVector3(coordData))
+                    end
+                end
+            end
+            
+            -- Load settings
             autoRespawn = decoded.autoRespawn or false
-            print("✅ Loaded slot " .. currentSlot .. " with " .. #coordinates .. " coordinates")
+            autoLoop = decoded.autoLoop or true
+            
+            print("✅ Loaded slot " .. currentSlot .. " with " .. #coordinates .. " coordinates from " .. fileName)
+            return true
         else
-            print("❌ JSON decode failed, using default data")
-            resetSaveFile()
+            print("❌ Failed to decode slot " .. currentSlot .. " data")
+            print("❌ Error: " .. tostring(decoded))
+            return false
         end
     else
-        print("📝 Using default data")
+        print("📝 No saved data for slot " .. currentSlot .. " (" .. fileName .. "), using defaults")
+        return false
     end
 end
 
--- Save coordinates to file dengan error handling
-local function saveCoordinates()
-    local dataToSave = {
-        coordinates = coordinates,
-        currentSlot = currentSlot,
-        autoRespawn = autoRespawn
-    }
+-- Clear slot data
+local function clearSlotData(slotNumber)
+    if not isFileSystemAvailable() then return end
     
-    local success, err = pcall(function()
-        if writefile then
-            writefile("auto_tp_coordinates.txt", HttpService:JSONEncode(dataToSave))
-            return true
+    local fileName = getSlotFileName(slotNumber)
+    local success = pcall(function()
+        if isfile(fileName) then
+            delfile(fileName)
+            print("🗑️ Cleared data for slot " .. slotNumber .. " (" .. fileName .. ")")
         end
-        return false
     end)
-    
-    if success then
-        print("💾 Saved slot " .. currentSlot .. " with " .. #coordinates .. " coordinates")
-    else
-        warn("❌ Failed to save coordinates: " .. tostring(err))
-    end
 end
 
 -- Auto Respawn Function
 local function autoRespawnCharacter()
     if autoRespawn and localPlayer.Character then
+        print("🔄 Auto respawning character...")
         localPlayer.Character:BreakJoints()
         
         -- Wait for respawn
         localPlayer.CharacterAdded:Wait()
-        wait(2) -- Wait for character to fully load
+        wait(2)
         
-        -- Save new original position after respawn
         if localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
             originalPosition = localPlayer.Character.HumanoidRootPart.Position
-            print("🔄 Respawn completed, new position saved")
+            print("✅ Respawn completed, new position saved")
         end
+        return true
     end
+    return false
 end
 
 -- Create Modern Horizontal UI
@@ -435,6 +515,7 @@ local function createSlotButton(slotNumber, position)
         updateSlotButtons()
         loadCoordinates()
         updateCoordinatesList()
+        updateToggleButtons()
     end)
     
     return button
@@ -447,10 +528,17 @@ for i = 1, maxSlots do
     slotButtons[i] = button
 end
 
+-- Toggle Buttons Container
+local toggleContainer = Instance.new("Frame")
+toggleContainer.Size = UDim2.new(1, 0, 0, 40)
+toggleContainer.Position = UDim2.new(0, 0, 0, 35)
+toggleContainer.BackgroundTransparency = 1
+toggleContainer.Parent = rightPanel
+
 -- Auto Respawn Toggle
 local respawnToggle = Instance.new("TextButton")
-respawnToggle.Size = UDim2.new(0, 80, 0, 20)
-respawnToggle.Position = UDim2.new(1, -85, 0, 5)
+respawnToggle.Size = UDim2.new(0.48, 0, 0, 20)
+respawnToggle.Position = UDim2.new(0, 0, 0, 0)
 respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
 respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
 respawnToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -462,12 +550,45 @@ local respawnCorner = Instance.new("UICorner")
 respawnCorner.CornerRadius = UDim.new(0, 4)
 respawnCorner.Parent = respawnToggle
 
-respawnToggle.Parent = slotContainer
+-- Auto Loop Toggle
+local loopToggle = Instance.new("TextButton")
+loopToggle.Size = UDim2.new(0.48, 0, 0, 20)
+loopToggle.Position = UDim2.new(0.52, 0, 0, 0)
+loopToggle.Text = autoLoop and "LOOP: ON" or "LOOP: OFF"
+loopToggle.BackgroundColor3 = autoLoop and Color3.fromRGB(0, 120, 200) or Color3.fromRGB(120, 60, 120)
+loopToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+loopToggle.Font = Enum.Font.GothamBold
+loopToggle.TextSize = 9
+loopToggle.BorderSizePixel = 0
+
+local loopCorner = Instance.new("UICorner")
+loopCorner.CornerRadius = UDim.new(0, 4)
+loopCorner.Parent = loopToggle
+
+respawnToggle.Parent = toggleContainer
+loopToggle.Parent = toggleContainer
+
+-- File Name Display
+local fileNameContainer = Instance.new("Frame")
+fileNameContainer.Size = UDim2.new(1, 0, 0, 15)
+fileNameContainer.Position = UDim2.new(0, 0, 0, 20)
+fileNameContainer.BackgroundTransparency = 1
+fileNameContainer.Parent = toggleContainer
+
+local fileNameText = Instance.new("TextLabel")
+fileNameText.Size = UDim2.new(1, 0, 1, 0)
+fileNameText.Text = "File: " .. getSlotFileName(currentSlot)
+fileNameText.TextColor3 = Color3.fromRGB(150, 150, 200)
+fileNameText.BackgroundTransparency = 1
+fileNameText.Font = Enum.Font.Gotham
+fileNameText.TextSize = 8
+fileNameText.TextXAlignment = Enum.TextXAlignment.Left
+fileNameText.Parent = fileNameContainer
 
 -- Coordinates List
 local listContainer = Instance.new("Frame")
-listContainer.Size = UDim2.new(1, 0, 1, -35)
-listContainer.Position = UDim2.new(0, 0, 0, 35)
+listContainer.Size = UDim2.new(1, 0, 1, -75)
+listContainer.Position = UDim2.new(0, 0, 0, 75)
 listContainer.BackgroundTransparency = 1
 listContainer.Parent = rightPanel
 
@@ -502,6 +623,15 @@ function updateSlotButtons()
     for i, button in ipairs(slotButtons) do
         button.BackgroundColor3 = i == currentSlot and Color3.fromRGB(80, 120, 200) or Color3.fromRGB(60, 60, 70)
     end
+    fileNameText.Text = "File: " .. getSlotFileName(currentSlot)
+end
+
+function updateToggleButtons()
+    respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
+    respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
+    
+    loopToggle.Text = autoLoop and "LOOP: ON" or "LOOP: OFF"
+    loopToggle.BackgroundColor3 = autoLoop and Color3.fromRGB(0, 120, 200) or Color3.fromRGB(120, 60, 120)
 end
 
 function saveOriginalPosition()
@@ -635,12 +765,17 @@ function startAutoTP()
     spawn(function()
         while isRunning do
             if currentIndex > #coordinates then
-                -- Auto respawn jika diaktifkan
-                if autoRespawn then
-                    progressText.Text = "Auto respawning..."
-                    autoRespawnCharacter()
+                if autoLoop or autoRespawn then
+                    if autoRespawn then
+                        progressText.Text = "Auto respawning..."
+                        autoRespawnCharacter()
+                    else
+                        progressText.Text = "Restarting loop..."
+                    end
                     currentIndex = 1
-                    wait(3) -- Tunggu respawn selesai
+                    if autoRespawn then
+                        wait(3)
+                    end
                 else
                     stopAutoTP()
                     break
@@ -696,7 +831,7 @@ function toggleMinimize()
     end
 end
 
--- Enhanced Draggable Functionality (Doesn't affect camera)
+-- Enhanced Draggable Functionality
 local dragging = false
 local dragInput, dragStart, startPos
 
@@ -718,7 +853,6 @@ local function startDrag(input)
         dragStart = input.Position
         startPos = isMinimized and minimizedFrame.Position or mainFrame.Position
         
-        -- Capture input to prevent camera movement
         local contextActionService = game:GetService("ContextActionService")
         contextActionService:BindAction("DisableCamera", function() return Enum.ContextActionResult.Sink end, false, Enum.UserInputType.MouseMovement)
         
@@ -744,13 +878,11 @@ local function handleDrag(input)
     end
 end
 
--- Apply drag functionality to both frames
+-- Apply drag functionality
 header.InputBegan:Connect(startDrag)
 header.InputChanged:Connect(updateInput)
-
 minimizedFrame.InputBegan:Connect(startDrag)
 minimizedFrame.InputChanged:Connect(updateInput)
-
 UserInputService.InputChanged:Connect(handleDrag)
 UserInputService.InputEnded:Connect(onInputEnded)
 
@@ -776,14 +908,25 @@ end)
 
 respawnToggle.MouseButton1Click:Connect(function()
     autoRespawn = not autoRespawn
-    respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
-    respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
     saveCoordinates()
+    updateToggleButtons()
     
     if autoRespawn then
         progressText.Text = "Auto Respawn: ENABLED"
     else
         progressText.Text = "Auto Respawn: DISABLED"
+    end
+end)
+
+loopToggle.MouseButton1Click:Connect(function()
+    autoLoop = not autoLoop
+    saveCoordinates()
+    updateToggleButtons()
+    
+    if autoLoop then
+        progressText.Text = "Auto Loop: ENABLED"
+    else
+        progressText.Text = "Auto Loop: DISABLED"
     end
 end)
 
@@ -798,19 +941,24 @@ UserInputService.InputBegan:Connect(function(input)
     end
 end)
 
--- Initialize
-resetSaveFile() -- Bersihkan file corrupt dulu
-loadCoordinates()
-updateSlotButtons()
-updateCoordinatesList()
+-- Initialize dengan benar
+local function initialize()
+    print("🔄 Initializing Auto TP System...")
+    print("📁 File System Available: " .. tostring(isFileSystemAvailable()))
+    
+    -- Load coordinates untuk slot pertama
+    loadCoordinates()
+    updateSlotButtons()
+    updateCoordinatesList()
+    updateToggleButtons()
+    
+    print("✅ Auto TP System Initialized!")
+    print("• Current Slot: " .. currentSlot)
+    print("• Current File: " .. getSlotFileName(currentSlot))
+    print("• Coordinates Loaded: " .. #coordinates)
+    print("• Auto Respawn: " .. tostring(autoRespawn))
+    print("• Auto Loop: " .. tostring(autoLoop))
+end
 
--- Update respawn toggle text
-respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
-respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
-
-print("🎯 Auto TP System Loaded!")
-print("• Press START to begin quick teleport")
-print("• ESC to close GUI or minimize")
-print("• Drag header to move window")
-print("• Auto Respawn: " .. (autoRespawn and "ENABLED" or "DISABLED"))
-print("• Current Slot: " .. currentSlot)
+-- Jalankan inisialisasi
+initialize()
