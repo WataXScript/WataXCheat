@@ -1,74 +1,114 @@
--- Advanced Auto TP System with Quick Return
+-- Advanced Auto TP System with Quick Return & Auto Respawn
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 -- Variables
 local coordinates = {}
 local originalPosition = nil
 local isRunning = false
 local currentIndex = 1
-local cooldown = 5
+local cooldown = 1
 local tpDuration = 0.01
 local isMinimized = false
+local autoRespawn = false
+local currentSlot = 1
+local maxSlots = 5
 
--- Load saved coordinates
+-- Fix untuk error file corruption
+local function resetSaveFile()
+    local success = pcall(function()
+        if isfile and isfile("auto_tp_coordinates.txt") then
+            delfile("auto_tp_coordinates.txt")
+            print("🗑️ Corrupted save file deleted")
+        end
+    end)
+end
+
+-- Load saved coordinates dengan error handling
 local function loadCoordinates()
+    -- Reset data default dulu
+    coordinates = {}
+    currentSlot = 1
+    autoRespawn = false
+    
     local success, result = pcall(function()
+        if not isfile or not isfile("auto_tp_coordinates.txt") then
+            return nil
+        end
         return readfile("auto_tp_coordinates.txt")
     end)
     
-    if success and result then
-        local loadedCoords = {}
-        for line in result:gmatch("[^\r\n]+") do
-            local x, y, z = line:match("([%d%.%-]+),([%d%.%-]+),([%d%.%-]+)")
-            if x and y and z then
-                table.insert(loadedCoords, Vector3.new(tonumber(x), tonumber(y), tonumber(z)))
-            end
+    if success and result and result ~= "" then
+        local success2, decoded = pcall(function()
+            return HttpService:JSONDecode(result)
+        end)
+        
+        if success2 and decoded then
+            coordinates = decoded.coordinates or {}
+            currentSlot = decoded.currentSlot or 1
+            autoRespawn = decoded.autoRespawn or false
+            print("✅ Loaded slot " .. currentSlot .. " with " .. #coordinates .. " coordinates")
+        else
+            print("❌ JSON decode failed, using default data")
+            resetSaveFile()
         end
-        coordinates = loadedCoords
-        print("✅ Loaded " .. #coordinates .. " coordinates from file")
     else
-        -- Default coordinates jika file tidak ada
-        coordinates = {
-            Vector3.new(100, 50, 100),
-            Vector3.new(200, 50, 150),
-            Vector3.new(150, 50, 200),
-            Vector3.new(300, 50, 100),
-            Vector3.new(250, 50, 250)
-        }
-        print("📝 Using default coordinates")
+        print("📝 Using default data")
     end
 end
 
--- Save coordinates to file
+-- Save coordinates to file dengan error handling
 local function saveCoordinates()
-    local coordStrings = {}
-    for _, coord in ipairs(coordinates) do
-        table.insert(coordStrings, string.format("%.2f,%.2f,%.2f", coord.X, coord.Y, coord.Z))
-    end
+    local dataToSave = {
+        coordinates = coordinates,
+        currentSlot = currentSlot,
+        autoRespawn = autoRespawn
+    }
     
     local success, err = pcall(function()
-        writefile("auto_tp_coordinates.txt", table.concat(coordStrings, "\n"))
+        if writefile then
+            writefile("auto_tp_coordinates.txt", HttpService:JSONEncode(dataToSave))
+            return true
+        end
+        return false
     end)
     
     if success then
-        print("💾 Saved " .. #coordinates .. " coordinates to file")
+        print("💾 Saved slot " .. currentSlot .. " with " .. #coordinates .. " coordinates")
     else
         warn("❌ Failed to save coordinates: " .. tostring(err))
     end
 end
 
--- Create Modern Compact UI
+-- Auto Respawn Function
+local function autoRespawnCharacter()
+    if autoRespawn and localPlayer.Character then
+        localPlayer.Character:BreakJoints()
+        
+        -- Wait for respawn
+        localPlayer.CharacterAdded:Wait()
+        wait(2) -- Wait for character to fully load
+        
+        -- Save new original position after respawn
+        if localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            originalPosition = localPlayer.Character.HumanoidRootPart.Position
+            print("🔄 Respawn completed, new position saved")
+        end
+    end
+end
+
+-- Create Modern Horizontal UI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoTPGUI"
 screenGui.Parent = game.CoreGui
 
--- Main Container
+-- Main Container (Horizontal)
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 320, 0, 380)
+mainFrame.Size = UDim2.new(0, 500, 0, 180)
 mainFrame.Position = UDim2.new(0, 20, 0, 20)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 mainFrame.BackgroundTransparency = 0.1
@@ -131,7 +171,7 @@ minimizedFrame.Parent = screenGui
 
 -- Header (Draggable Area)
 local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 35)
+header.Size = UDim2.new(1, 0, 0, 30)
 header.Position = UDim2.new(0, 0, 0, 0)
 header.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 header.BorderSizePixel = 0
@@ -144,31 +184,19 @@ headerCorner.Parent = header
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -80, 1, 0)
 title.Position = UDim2.new(0, 15, 0, 0)
-title.Text = "⚡ AUTO TELEPORT"
+title.Text = "⚡ AUTO TELEPORT SYSTEM"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.GothamBold
-title.TextSize = 14
+title.TextSize = 12
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.ZIndex = 2
 title.Parent = header
 
-local subtitle = Instance.new("TextLabel")
-subtitle.Size = UDim2.new(1, -80, 0, 12)
-subtitle.Position = UDim2.new(0, 15, 0, 18)
-subtitle.Text = "Quick Return System"
-subtitle.TextColor3 = Color3.fromRGB(200, 200, 255)
-subtitle.BackgroundTransparency = 1
-subtitle.Font = Enum.Font.Gotham
-subtitle.TextSize = 9
-subtitle.TextXAlignment = Enum.TextXAlignment.Left
-subtitle.ZIndex = 2
-subtitle.Parent = header
-
 -- Control Buttons in Header
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Size = UDim2.new(0, 25, 0, 25)
-minimizeBtn.Position = UDim2.new(1, -60, 0, 5)
+minimizeBtn.Position = UDim2.new(1, -60, 0, 2)
 minimizeBtn.Text = "─"
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
@@ -183,7 +211,7 @@ minimizeCorner.Parent = minimizeBtn
 
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 25, 0, 25)
-closeBtn.Position = UDim2.new(1, -30, 0, 5)
+closeBtn.Position = UDim2.new(1, -30, 0, 2)
 closeBtn.Text = "×"
 closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
 closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
@@ -200,16 +228,22 @@ minimizeBtn.Parent = header
 closeBtn.Parent = header
 header.Parent = mainFrame
 
--- Content Area
+-- Content Area (Horizontal Layout)
 local content = Instance.new("Frame")
-content.Size = UDim2.new(1, -20, 1, -45)
-content.Position = UDim2.new(0, 10, 0, 40)
+content.Size = UDim2.new(1, -20, 1, -35)
+content.Position = UDim2.new(0, 10, 0, 35)
 content.BackgroundTransparency = 1
 content.Parent = mainFrame
 
+-- Left Panel - Controls
+local leftPanel = Instance.new("Frame")
+leftPanel.Size = UDim2.new(0, 200, 1, 0)
+leftPanel.BackgroundTransparency = 1
+leftPanel.Parent = content
+
 -- Status Card
 local statusCard = Instance.new("Frame")
-statusCard.Size = UDim2.new(1, 0, 0, 60)
+statusCard.Size = UDim2.new(1, 0, 0, 50)
 statusCard.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 statusCard.BorderSizePixel = 0
 
@@ -219,54 +253,54 @@ statusCorner.Parent = statusCard
 
 local statusIcon = Instance.new("TextLabel")
 statusIcon.Size = UDim2.new(0, 30, 0, 30)
-statusIcon.Position = UDim2.new(0, 10, 0, 15)
+statusIcon.Position = UDim2.new(0, 10, 0, 10)
 statusIcon.Text = "⏹️"
 statusIcon.TextColor3 = Color3.fromRGB(255, 100, 100)
 statusIcon.BackgroundTransparency = 1
 statusIcon.Font = Enum.Font.GothamBold
-statusIcon.TextSize = 16
+statusIcon.TextSize = 14
 statusIcon.Parent = statusCard
 
 local statusText = Instance.new("TextLabel")
-statusText.Size = UDim2.new(1, -50, 0, 20)
-statusText.Position = UDim2.new(0, 45, 0, 12)
+statusText.Size = UDim2.new(1, -50, 0, 18)
+statusText.Position = UDim2.new(0, 45, 0, 8)
 statusText.Text = "READY TO START"
 statusText.TextColor3 = Color3.fromRGB(255, 255, 255)
 statusText.BackgroundTransparency = 1
 statusText.Font = Enum.Font.GothamBold
-statusText.TextSize = 13
+statusText.TextSize = 11
 statusText.TextXAlignment = Enum.TextXAlignment.Left
 statusText.Parent = statusCard
 
 local progressText = Instance.new("TextLabel")
 progressText.Size = UDim2.new(1, -50, 0, 15)
-progressText.Position = UDim2.new(0, 45, 0, 32)
+progressText.Position = UDim2.new(0, 45, 0, 25)
 progressText.Text = "Press START to begin"
 progressText.TextColor3 = Color3.fromRGB(200, 200, 200)
 progressText.BackgroundTransparency = 1
 progressText.Font = Enum.Font.Gotham
-progressText.TextSize = 10
+progressText.TextSize = 9
 progressText.TextXAlignment = Enum.TextXAlignment.Left
 progressText.Parent = statusCard
 
-statusCard.Parent = content
+statusCard.Parent = leftPanel
 
--- Control Buttons
+-- Control Buttons Grid
 local buttonContainer = Instance.new("Frame")
-buttonContainer.Size = UDim2.new(1, 0, 0, 80)
-buttonContainer.Position = UDim2.new(0, 0, 0, 70)
+buttonContainer.Size = UDim2.new(1, 0, 0, 70)
+buttonContainer.Position = UDim2.new(0, 0, 0, 55)
 buttonContainer.BackgroundTransparency = 1
-buttonContainer.Parent = content
+buttonContainer.Parent = leftPanel
 
-local function createButton(text, color, position)
+local function createButton(text, color, position, size)
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(0.48, 0, 0, 35)
+    button.Size = size or UDim2.new(0.48, 0, 0, 30)
     button.Position = position
     button.Text = text
     button.BackgroundColor3 = color
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
     button.Font = Enum.Font.GothamBold
-    button.TextSize = 12
+    button.TextSize = 11
     button.AutoButtonColor = true
     
     local buttonCorner = Instance.new("UICorner")
@@ -278,8 +312,8 @@ end
 
 local startBtn = createButton("🚀 START", Color3.fromRGB(0, 180, 120), UDim2.new(0, 0, 0, 0))
 local stopBtn = createButton("⏹️ STOP", Color3.fromRGB(220, 60, 60), UDim2.new(0.52, 0, 0, 0))
-local addBtn = createButton("➕ ADD", Color3.fromRGB(80, 120, 200), UDim2.new(0, 0, 0, 40))
-local clearBtn = createButton("🗑️ CLEAR", Color3.fromRGB(200, 120, 80), UDim2.new(0.52, 0, 0, 40))
+local addBtn = createButton("➕ ADD", Color3.fromRGB(80, 120, 200), UDim2.new(0, 0, 0, 35))
+local clearBtn = createButton("🗑️ CLEAR", Color3.fromRGB(200, 120, 80), UDim2.new(0.52, 0, 0, 35))
 
 startBtn.Parent = buttonContainer
 stopBtn.Parent = buttonContainer
@@ -288,8 +322,8 @@ clearBtn.Parent = buttonContainer
 
 -- Settings Panel
 local settingsPanel = Instance.new("Frame")
-settingsPanel.Size = UDim2.new(1, 0, 0, 80)
-settingsPanel.Position = UDim2.new(0, 0, 0, 160)
+settingsPanel.Size = UDim2.new(1, 0, 0, 40)
+settingsPanel.Position = UDim2.new(0, 0, 0, 130)
 settingsPanel.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 settingsPanel.BorderSizePixel = 0
 
@@ -297,21 +331,10 @@ local settingsCorner = Instance.new("UICorner")
 settingsCorner.CornerRadius = UDim.new(0, 6)
 settingsCorner.Parent = settingsPanel
 
-local settingsTitle = Instance.new("TextLabel")
-settingsTitle.Size = UDim2.new(1, -20, 0, 20)
-settingsTitle.Position = UDim2.new(0, 10, 0, 0)
-settingsTitle.Text = "SETTINGS"
-settingsTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
-settingsTitle.BackgroundTransparency = 1
-settingsTitle.Font = Enum.Font.GothamBold
-settingsTitle.TextSize = 12
-settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
-settingsTitle.Parent = settingsPanel
-
-local function createSetting(label, defaultValue, yPosition)
+local function createSetting(label, defaultValue, yPosition, isToggle)
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, -20, 0, 20)
-    container.Position = UDim2.new(0, 10, 0, yPosition)
+    container.Size = UDim2.new(1, -10, 0, 18)
+    container.Position = UDim2.new(0, 5, 0, yPosition)
     container.BackgroundTransparency = 1
     container.Parent = settingsPanel
     
@@ -322,40 +345,131 @@ local function createSetting(label, defaultValue, yPosition)
     labelText.TextColor3 = Color3.fromRGB(255, 255, 255)
     labelText.BackgroundTransparency = 1
     labelText.Font = Enum.Font.Gotham
-    labelText.TextSize = 10
+    labelText.TextSize = 9
     labelText.TextXAlignment = Enum.TextXAlignment.Left
     labelText.Parent = container
     
-    local textBox = Instance.new("TextBox")
-    textBox.Size = UDim2.new(0.35, 0, 1, 0)
-    textBox.Position = UDim2.new(0.65, 0, 0, 0)
-    textBox.Text = tostring(defaultValue)
-    textBox.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textBox.Font = Enum.Font.Gotham
-    textBox.TextSize = 10
-    textBox.BorderSizePixel = 0
-    
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(0, 4)
-    boxCorner.Parent = textBox
-    
-    textBox.Parent = container
-    return textBox
+    if isToggle then
+        local toggleBtn = Instance.new("TextButton")
+        toggleBtn.Size = UDim2.new(0.35, 0, 1, 0)
+        toggleBtn.Position = UDim2.new(0.65, 0, 0, 0)
+        toggleBtn.Text = defaultValue and "ON" or "OFF"
+        toggleBtn.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
+        toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        toggleBtn.Font = Enum.Font.GothamBold
+        toggleBtn.TextSize = 9
+        toggleBtn.BorderSizePixel = 0
+        
+        local toggleCorner = Instance.new("UICorner")
+        toggleCorner.CornerRadius = UDim.new(0, 4)
+        toggleCorner.Parent = toggleBtn
+        
+        toggleBtn.Parent = container
+        return toggleBtn
+    else
+        local textBox = Instance.new("TextBox")
+        textBox.Size = UDim2.new(0.35, 0, 1, 0)
+        textBox.Position = UDim2.new(0.65, 0, 0, 0)
+        textBox.Text = tostring(defaultValue)
+        textBox.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textBox.Font = Enum.Font.Gotham
+        textBox.TextSize = 9
+        textBox.BorderSizePixel = 0
+        
+        local boxCorner = Instance.new("UICorner")
+        boxCorner.CornerRadius = UDim.new(0, 4)
+        boxCorner.Parent = textBox
+        
+        textBox.Parent = container
+        return textBox
+    end
 end
 
-local cooldownInput = createSetting("Cooldown:", 1, 25)
-local durationInput = createSetting("Duration:", 0.01, 45)
-local loopToggle = createSetting("Loop:", "true", 65)
+local cooldownInput = createSetting("Cooldown:", 1, 2, false)
+local durationInput = createSetting("Duration:", 0.01, 20, false)
 
-settingsPanel.Parent = content
+settingsPanel.Parent = leftPanel
+
+-- Right Panel - Coordinates & Slots
+local rightPanel = Instance.new("Frame")
+rightPanel.Size = UDim2.new(0, 270, 1, 0)
+rightPanel.Position = UDim2.new(0, 210, 0, 0)
+rightPanel.BackgroundTransparency = 1
+rightPanel.Parent = content
+
+-- Slot Selector
+local slotContainer = Instance.new("Frame")
+slotContainer.Size = UDim2.new(1, 0, 0, 30)
+slotContainer.BackgroundTransparency = 1
+slotContainer.Parent = rightPanel
+
+local slotTitle = Instance.new("TextLabel")
+slotTitle.Size = UDim2.new(0, 60, 1, 0)
+slotTitle.Position = UDim2.new(0, 0, 0, 0)
+slotTitle.Text = "SLOT:"
+slotTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
+slotTitle.BackgroundTransparency = 1
+slotTitle.Font = Enum.Font.GothamBold
+slotTitle.TextSize = 11
+slotTitle.TextXAlignment = Enum.TextXAlignment.Left
+slotTitle.Parent = slotContainer
+
+local function createSlotButton(slotNumber, position)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0, 30, 0, 25)
+    button.Position = position
+    button.Text = tostring(slotNumber)
+    button.BackgroundColor3 = slotNumber == currentSlot and Color3.fromRGB(80, 120, 200) or Color3.fromRGB(60, 60, 70)
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 11
+    button.BorderSizePixel = 0
+    
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 4)
+    buttonCorner.Parent = button
+    
+    button.MouseButton1Click:Connect(function()
+        currentSlot = slotNumber
+        updateSlotButtons()
+        loadCoordinates()
+        updateCoordinatesList()
+    end)
+    
+    return button
+end
+
+local slotButtons = {}
+for i = 1, maxSlots do
+    local button = createSlotButton(i, UDim2.new(0, 60 + (i-1)*35, 0, 0))
+    button.Parent = slotContainer
+    slotButtons[i] = button
+end
+
+-- Auto Respawn Toggle
+local respawnToggle = Instance.new("TextButton")
+respawnToggle.Size = UDim2.new(0, 80, 0, 20)
+respawnToggle.Position = UDim2.new(1, -85, 0, 5)
+respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
+respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
+respawnToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+respawnToggle.Font = Enum.Font.GothamBold
+respawnToggle.TextSize = 9
+respawnToggle.BorderSizePixel = 0
+
+local respawnCorner = Instance.new("UICorner")
+respawnCorner.CornerRadius = UDim.new(0, 4)
+respawnCorner.Parent = respawnToggle
+
+respawnToggle.Parent = slotContainer
 
 -- Coordinates List
 local listContainer = Instance.new("Frame")
-listContainer.Size = UDim2.new(1, 0, 1, -250)
-listContainer.Position = UDim2.new(0, 0, 0, 250)
+listContainer.Size = UDim2.new(1, 0, 1, -35)
+listContainer.Position = UDim2.new(0, 0, 0, 35)
 listContainer.BackgroundTransparency = 1
-listContainer.Parent = content
+listContainer.Parent = rightPanel
 
 local listTitle = Instance.new("TextLabel")
 listTitle.Size = UDim2.new(1, 0, 0, 20)
@@ -384,6 +498,12 @@ listCorner.Parent = coordinatesFrame
 coordinatesFrame.Parent = listContainer
 
 -- Functions
+function updateSlotButtons()
+    for i, button in ipairs(slotButtons) do
+        button.BackgroundColor3 = i == currentSlot and Color3.fromRGB(80, 120, 200) or Color3.fromRGB(60, 60, 70)
+    end
+end
+
 function saveOriginalPosition()
     if localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
         originalPosition = localPlayer.Character.HumanoidRootPart.Position
@@ -423,7 +543,7 @@ function updateCoordinatesList()
     coordinatesFrame:ClearAllChildren()
     
     local yOffset = 0
-    local itemHeight = 22
+    local itemHeight = 20
     
     for i, coord in ipairs(coordinates) do
         local itemFrame = Instance.new("Frame")
@@ -460,7 +580,7 @@ function updateCoordinatesList()
         
         local deleteBtn = Instance.new("TextButton")
         deleteBtn.Size = UDim2.new(0, 16, 0, 16)
-        deleteBtn.Position = UDim2.new(1, -20, 0, 3)
+        deleteBtn.Position = UDim2.new(1, -20, 0, 2)
         deleteBtn.Text = "×"
         deleteBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
         deleteBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 50)
@@ -515,8 +635,12 @@ function startAutoTP()
     spawn(function()
         while isRunning do
             if currentIndex > #coordinates then
-                if loopToggle.Text:lower() == "true" then
+                -- Auto respawn jika diaktifkan
+                if autoRespawn then
+                    progressText.Text = "Auto respawning..."
+                    autoRespawnCharacter()
                     currentIndex = 1
+                    wait(3) -- Tunggu respawn selesai
                 else
                     stopAutoTP()
                     break
@@ -650,6 +774,19 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
+respawnToggle.MouseButton1Click:Connect(function()
+    autoRespawn = not autoRespawn
+    respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
+    respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
+    saveCoordinates()
+    
+    if autoRespawn then
+        progressText.Text = "Auto Respawn: ENABLED"
+    else
+        progressText.Text = "Auto Respawn: DISABLED"
+    end
+end)
+
 -- Close with ESC
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Escape then
@@ -662,11 +799,18 @@ UserInputService.InputBegan:Connect(function(input)
 end)
 
 -- Initialize
+resetSaveFile() -- Bersihkan file corrupt dulu
 loadCoordinates()
+updateSlotButtons()
 updateCoordinatesList()
+
+-- Update respawn toggle text
+respawnToggle.Text = autoRespawn and "RESPAWN: ON" or "RESPAWN: OFF"
+respawnToggle.BackgroundColor3 = autoRespawn and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 50, 50)
 
 print("🎯 Auto TP System Loaded!")
 print("• Press START to begin quick teleport")
 print("• ESC to close GUI or minimize")
 print("• Drag header to move window")
-print("• Coordinates are automatically saved")
+print("• Auto Respawn: " .. (autoRespawn and "ENABLED" or "DISABLED"))
+print("• Current Slot: " .. currentSlot)
