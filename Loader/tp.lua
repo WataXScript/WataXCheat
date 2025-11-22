@@ -643,13 +643,8 @@ function saveOriginalPosition()
     return false
 end
 
+-- MODIFIED: Simple teleport without return to start
 function quickTeleport(targetCoord)
-    if not originalPosition then
-        if not saveOriginalPosition() then
-            return false
-        end
-    end
-    
     local character = localPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then
         return false
@@ -657,14 +652,14 @@ function quickTeleport(targetCoord)
     
     local hrp = character.HumanoidRootPart
     
-    -- TP ke target
+    -- Simply teleport to target coordinate
     hrp.CFrame = CFrame.new(targetCoord)
     
-    -- Tunggu sebentar sesuai duration
-    wait(tonumber(durationInput.Text) or 0.01)
-    
-    -- Kembali ke posisi awal
-    hrp.CFrame = CFrame.new(originalPosition)
+    -- Wait for duration (if any)
+    local duration = tonumber(durationInput.Text) or 0.01
+    if duration > 0 then
+        wait(duration)
+    end
     
     return true
 end
@@ -747,16 +742,9 @@ function startAutoTP()
         return
     end
     
-    if not saveOriginalPosition() then
-        statusText.Text = "ERROR: No Character"
-        statusIcon.Text = "❌"
-        return
-    end
-    
     isRunning = true
     currentIndex = 1
     cooldown = tonumber(cooldownInput.Text) or 1
-    tpDuration = tonumber(durationInput.Text) or 0.01
     
     statusText.Text = "TELEPORTING..."
     statusIcon.Text = "🚀"
